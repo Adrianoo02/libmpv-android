@@ -325,6 +325,65 @@ cbcs = r'''static int cbcs_scheme_decrypt(MOVContext *c, MOVStreamContext *sc, A
 source = replace_function(source, "static int mov_read_tenc(", tenc)
 source = replace_function(source, "static int cbcs_scheme_decrypt(", cbcs)
 
+# Tymczasowa diagnostyka: wskaz, ktory atom MOV powoduje blad naglowka.
+diag_old = r'''            int err = parse(c, pb, a);
+            if (err < 0) {
+                c->atom_depth --;
+                return err;
+            }'''
+diag_new = r'''            int err = parse(c, pb, a);
+            if (err < 0) {
+                av_log(c->fc, AV_LOG_ERROR,
+                       "WAEXPLORER_DIAG: atom %s size=%"PRId64" offset=%"PRId64" parse_error=%d\n",
+                       av_fourcc2str(a.type), a.size, start_pos, err);
+                c->atom_depth --;
+                return err;
+            }'''
+if source.count(diag_old) != 1:
+    raise SystemExit("Nie znaleziono jednoznacznego bloku mov_read_default do diagnostyki.")
+source = source.replace(diag_old, diag_new, 1)
+
+tenc_size_old = '''    if (atom.size < 23)
+        return AVERROR_INVALIDDATA;'''
+tenc_size_new = '''    if (atom.size < 23) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "WAEXPLORER_DIAG: tenc too small, atom_size=%"PRId64"\\n", atom.size);
+        return AVERROR_INVALIDDATA;
+    }'''
+if source.count(tenc_size_old) != 1:
+    raise SystemExit("Nie znaleziono kontroli rozmiaru tenc.")
+source = source.replace(tenc_size_old, tenc_size_new, 1)
+
+tenc_raw_old = '''    pattern = avio_r8(pb);
+    is_protected = avio_r8(pb);
+
+    /* ISO/IEC 23001-7 layout:'''
+tenc_raw_new = '''    pattern = avio_r8(pb);
+    is_protected = avio_r8(pb);
+    av_log(c->fc, AV_LOG_ERROR,
+           "WAEXPLORER_DIAG: tenc raw size=%"PRId64" version=%u field2=%u field3=%u\\\\n",
+           atom.size, version, pattern, is_protected);
+
+    /* ISO/IEC 23001-7 layout:'''
+if source.count(tenc_raw_old) != 1:
+    raise SystemExit("Nie znaleziono miejsca do diagnostyki pol tenc.")
+source = source.replace(tenc_raw_old, tenc_raw_new, 1)
+
+tenc_parsed_old = '''        iv_size = avio_r8(pb);
+    }
+
+    if (is_protected && !sc->cenc.encryption_index) {'''
+tenc_parsed_new = '''        iv_size = avio_r8(pb);
+    }
+    av_log(c->fc, AV_LOG_ERROR,
+           "WAEXPLORER_DIAG: tenc parsed legacy=%d protected=%u iv_size=%u pattern=0x%02x version=%u\\\\n",
+           legacy_layout, is_protected, iv_size, pattern, version);
+
+    if (is_protected && !sc->cenc.encryption_index) {'''
+if source.count(tenc_parsed_old) != 1:
+    raise SystemExit("Nie znaleziono miejsca do diagnostyki wyniku parsera tenc.")
+source = source.replace(tenc_parsed_old, tenc_parsed_new, 1)
+
 required = (
     "legacy_layout",
     "crypt_blocks",
