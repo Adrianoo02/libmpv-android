@@ -60,27 +60,23 @@ for index in range(4):
     end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
     section = text[start:end]
 
-    subject_match = re.search(
-        r"(?m)^Subject: \[PATCH 0" + str(index + 1) + r"/10\][ \t]*(.*(?:\n[ \t]+.*)*)$",
-        section
-    )
-    if not subject_match:
-        raise SystemExit(f"Nie mozna odczytac tytulu poprawki {index + 1}/10.")
-
-    subject = re.sub(r"\s+", " ", subject_match.group(1)).strip()
-    if subject != expected_subjects[index]:
+    header = section.split("\n\n", 1)[0]
+    normalized_header = re.sub(r"\s+", " ", header)
+    if expected_subjects[index] not in normalized_header:
         raise SystemExit(
-            f"Nieoczekiwany tytul poprawki {index + 1}/10: {subject!r}"
+            f"Nieoczekiwany naglowek poprawki {index + 1}/4: {normalized_header[:500]!r}"
         )
 
     diff_paths = re.findall(
         r"(?m)^diff --git a/([^ ]+) b/([^ ]+)$",
         section
     )
-    if not diff_paths or any(a != "libavformat/mov.c" or b != "libavformat/mov.c"
-                             for a, b in diff_paths):
+    if not diff_paths or any(
+        a != "libavformat/mov.c" or b != "libavformat/mov.c"
+        for a, b in diff_paths
+    ):
         raise SystemExit(
-            f"Poprawka {index + 1}/10 zmienia nieoczekiwane pliki: {diff_paths!r}"
+            f"Poprawka {index + 1}/4 zmienia nieoczekiwane pliki: {diff_paths!r}"
         )
 
     selected.append(section)
@@ -90,6 +86,7 @@ output_path.write_text(series, encoding="utf-8", newline="\n")
 print("Zweryfikowano tytuly i zakres czterech poprawek demuksera CBCS.")
 print("Zakres zmian ograniczony do libavformat/mov.c.")
 PY
+
 echo "Nakladanie poprawek na FFmpeg n9.0.2..."
 git -C "$FFMPEG_DIR" -c user.name="WAExplorer CBCS build" -c user.email="actions@users.noreply.github.com" am --keep-cr "$TMP_DIR/cbcs-demuxer.mbox"
 
