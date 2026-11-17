@@ -1,4 +1,4 @@
-name: Build patched libmpv 1.1.0 (CBCS, arm64) - retry 4
+name: Build patched libmpv 1.1.0 (CBCS, arm64) - retry 5
 
 on:
   push:
@@ -61,6 +61,7 @@ jobs:
         working-directory: ./buildscripts
         run: ./patch.sh
 
+      # Backport parsera tenc i deszyfrowania CBCS do przypietego FFmpeg n9.0.2.
       - name: Zastosuj poprawki FFmpeg dla CBCS
         working-directory: ./buildscripts
         run: bash ./apply-cbcs-demuxer-patches.sh
