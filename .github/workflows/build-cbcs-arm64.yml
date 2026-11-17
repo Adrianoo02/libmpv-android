@@ -1,0 +1,79 @@
+name: Build patched libmpv 1.1.0 (CBCS, arm64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Gałąź źródłowa do zbudowania"
+        required: true
+        type: string
+        default: "waexplorer-cbcs-arm64"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: FFmpeg CBCS + libmpv arm64-v8a
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Pobierz kod repozytorium
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 1
+
+      - name: Skonfiguruj Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Skonfiguruj Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Podepnij Android SDK
+        working-directory: ./buildscripts
+        run: |
+          mkdir -p sdk
+          ln -sfn "${ANDROID_HOME}" ./sdk/android-sdk-linux
+
+      - name: Zainstaluj narzędzia systemowe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip python3-jinja2 gperf nasm
+          python3 -m pip install --break-system-packages meson
+
+      - name: Pobierz FFmpeg, mpv i zależności
+        working-directory: ./buildscripts
+        env:
+          IN_CI: "1"
+        run: ./download.sh
+
+      - name: Zastosuj standardowe poprawki projektu
+        working-directory: ./buildscripts
+        run: ./patch.sh
+
+      - name: Zastosuj poprawki FFmpeg dla CBCS
+        working-directory: ./buildscripts
+        run: bash ./apply-cbcs-demuxer-patches.sh
+
+      - name: Zbuduj AAR dla arm64-v8a
+        working-directory: ./buildscripts
+        run: ./build.sh --arch arm64
+
+      - name: Sprawdź wynik
+        run: |
+          test -s ./libmpv/build/outputs/aar/libmpv-release.aar
+          ls -lh ./libmpv/build/outputs/aar/libmpv-release.aar
+          unzip -l ./libmpv/build/outputs/aar/libmpv-release.aar | grep -E 'arm64-v8a|classes.jar' | head -30
+
+      - name: Udostępnij AAR
+        uses: actions/upload-artifact@v7
+        with:
+          name: libmpv-1.1.0-cbcs-arm64
+          path: ./libmpv/build/outputs/aar/libmpv-release.aar
+          if-no-files-found: error
+          retention-days: 14
