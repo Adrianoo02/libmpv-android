@@ -1,4 +1,4 @@
-name: Build patched libmpv 1.1.0 (CBCS, arm64)
+name: Build patched libmpv 1.1.0 (CBCS, arm64) - retry
 
 on:
   push:
