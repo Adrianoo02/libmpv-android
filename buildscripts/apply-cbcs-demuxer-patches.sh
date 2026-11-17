@@ -76,7 +76,7 @@ print("Zweryfikowano cztery poprawki demuksera CBCS.")
 PY
 
 echo "Nakladanie poprawek na FFmpeg n9.0.2..."
-git -C "$FFMPEG_DIR" am --keep-cr "$TMP_DIR/cbcs-demuxer.mbox"
+git -C "$FFMPEG_DIR" -c user.name="WAExplorer CBCS build" -c user.email="actions@users.noreply.github.com" am --keep-cr "$TMP_DIR/cbcs-demuxer.mbox"
 
 PATCHED_FILES="$(git -C "$FFMPEG_DIR" diff HEAD~4 HEAD --name-only)"
 if [[ "$PATCHED_FILES" != "libavformat/mov.c" ]]; then
