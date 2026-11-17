@@ -1,4 +1,4 @@
-name: Build patched libmpv 1.1.0 (CBCS, arm64) - retry 5
+name: Build patched libmpv 1.1.0 (CBCS, arm64) - diagnostic
 
 on:
   push:
@@ -79,7 +79,7 @@ jobs:
       - name: Udostępnij AAR
         uses: actions/upload-artifact@v7
         with:
-          name: libmpv-1.1.0-cbcs-arm64
+          name: libmpv-1.1.0-cbcs-arm64-diag
           path: ./libmpv/build/outputs/aar/libmpv-release.aar
           if-no-files-found: error
           retention-days: 14
