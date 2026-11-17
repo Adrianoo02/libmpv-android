@@ -41,7 +41,7 @@ output_path = Path(sys.argv[2])
 text = source_path.read_text(encoding="utf-8", errors="replace")
 
 markers = list(re.finditer(
-    r"(?m)^From ([0-9a-f]{40}) Mon Sep 17 00:00:00 2001\\s*$",
+    r"(?m)^From ([0-9a-f]{40}) Mon Sep 17 00:00:00 2001[ \t]*$",
     text
 ))
 if len(markers) < 4:
@@ -61,36 +61,35 @@ for index in range(4):
     section = text[start:end]
 
     subject_match = re.search(
-        r"(?m)^Subject: \\[PATCH 0" + str(index + 1) + r"/10\\]\\s*(.*(?:\\n[ \\t]+.*)*)$",
+        r"(?m)^Subject: \[PATCH 0" + str(index + 1) + r"/10\][ \t]*(.*(?:\n[ \t]+.*)*)$",
         section
     )
     if not subject_match:
         raise SystemExit(f"Nie mozna odczytac tytulu poprawki {index + 1}/10.")
 
-    subject = re.sub(r"\\s+", " ", subject_match.group(1)).strip()
+    subject = re.sub(r"\s+", " ", subject_match.group(1)).strip()
     if subject != expected_subjects[index]:
         raise SystemExit(
             f"Nieoczekiwany tytul poprawki {index + 1}/10: {subject!r}"
         )
 
-    diff_paths = set(re.findall(
+    diff_paths = re.findall(
         r"(?m)^diff --git a/([^ ]+) b/([^ ]+)$",
         section
-    ))
-    normalized_paths = {a for a, b in diff_paths if a == b}
-    if normalized_paths != {"libavformat/mov.c"}:
+    )
+    if not diff_paths or any(a != "libavformat/mov.c" or b != "libavformat/mov.c"
+                             for a, b in diff_paths):
         raise SystemExit(
-            f"Poprawka {index + 1}/10 zmienia nieoczekiwane pliki: {sorted(normalized_paths)}"
+            f"Poprawka {index + 1}/10 zmienia nieoczekiwane pliki: {diff_paths!r}"
         )
 
     selected.append(section)
 
 series = "".join(selected)
-output_path.write_text(series, encoding="utf-8", newline="\\n")
+output_path.write_text(series, encoding="utf-8", newline="\n")
 print("Zweryfikowano tytuly i zakres czterech poprawek demuksera CBCS.")
 print("Zakres zmian ograniczony do libavformat/mov.c.")
-PYPY
-
+PY
 echo "Nakladanie poprawek na FFmpeg n9.0.2..."
 git -C "$FFMPEG_DIR" -c user.name="WAExplorer CBCS build" -c user.email="actions@users.noreply.github.com" am --keep-cr "$TMP_DIR/cbcs-demuxer.mbox"
 
