@@ -5,13 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FFMPEG_DIR="$SCRIPT_DIR/deps/ffmpeg"
 PATCH_URL="https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/25965.patch"
 
-EXPECTED_COMMITS=(
-  "ca251548bd61c9c615d2ff0143eea417b33f038a"
-  "8019c5d2f9b7c764239b021b52c1bdb49fb13872"
-  "c95ba3d34fdd1fc125e3b51c2f6777c72ff766e8"
-  "71f6250d7ffe7a67d79167f72def406231dfcbe0"
-)
-
 if [[ ! -d "$FFMPEG_DIR/.git" ]]; then
   echo "ERROR: Nie znaleziono repozytorium FFmpeg: $FFMPEG_DIR" >&2
   echo "Najpierw uruchom buildscripts/download.sh." >&2
@@ -31,7 +24,6 @@ echo "Pobieranie serii poprawek FFmpeg CBCS..."
 curl --fail --location --retry 3 --retry-delay 2 --connect-timeout 30 \
   "$PATCH_URL" -o "$TMP_DIR/ffmpeg-25965.patch"
 
-python3 - "$TMP_DIR/ffmpeg-25965.patch" "$TMP_DIR/cbcs-demuxer.mbox" <<'PY'
 python3 - "$TMP_DIR/ffmpeg-25965.patch" "$TMP_DIR/cbcs-demuxer.mbox" <<'PY'
 import re
 import sys
