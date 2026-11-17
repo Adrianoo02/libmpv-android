@@ -32,6 +32,7 @@ curl --fail --location --retry 3 --retry-delay 2 --connect-timeout 30 \
   "$PATCH_URL" -o "$TMP_DIR/ffmpeg-25965.patch"
 
 python3 - "$TMP_DIR/ffmpeg-25965.patch" "$TMP_DIR/cbcs-demuxer.mbox" <<'PY'
+python3 - "$TMP_DIR/ffmpeg-25965.patch" "$TMP_DIR/cbcs-demuxer.mbox" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -54,18 +55,26 @@ expected_subjects = [
     "avformat/mov: fix cbcs decryption for whole and subsampled samples",
 ]
 
-selected = []
-for index in range(4):
-    start = markers[index].start()
+found = {}
+for index, marker in enumerate(markers):
+    start = marker.start()
     end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
     section = text[start:end]
-
     header = section.split("\n\n", 1)[0]
     normalized_header = re.sub(r"\s+", " ", header)
-    if expected_subjects[index] not in normalized_header:
-        raise SystemExit(
-            f"Nieoczekiwany naglowek poprawki {index + 1}/4: {normalized_header[:500]!r}"
-        )
+
+    matches = [
+        subject for subject in expected_subjects
+        if subject in normalized_header
+    ]
+    if not matches:
+        continue
+    if len(matches) != 1:
+        raise SystemExit(f"Niejednoznaczny naglowek poprawki: {normalized_header!r}")
+
+    subject = matches[0]
+    if subject in found:
+        raise SystemExit(f"Poprawka wystepuje wiecej niz raz: {subject}")
 
     diff_paths = re.findall(
         r"(?m)^diff --git a/([^ ]+) b/([^ ]+)$",
@@ -76,17 +85,36 @@ for index in range(4):
         for a, b in diff_paths
     ):
         raise SystemExit(
-            f"Poprawka {index + 1}/4 zmienia nieoczekiwane pliki: {diff_paths!r}"
+            f"Poprawka '{subject}' zmienia nieoczekiwane pliki: {diff_paths!r}"
         )
 
-    selected.append(section)
+    found[subject] = section
 
-series = "".join(selected)
-output_path.write_text(series, encoding="utf-8", newline="\n")
-print("Zweryfikowano tytuly i zakres czterech poprawek demuksera CBCS.")
-print("Zakres zmian ograniczony do libavformat/mov.c.")
+missing = [subject for subject in expected_subjects if subject not in found]
+if missing:
+    print("Nie znaleziono wymaganych poprawek:", file=sys.stderr)
+    for subject in missing:
+        print(" - " + subject, file=sys.stderr)
+    raise SystemExit(4)
+
+# Zachowujemy kolejnosc oryginalnej serii PR - wybieramy tylko cztery
+# poprawki demuksera, pomijajac zmiany muxera i testow.
+selected = []
+for index, marker in enumerate(markers):
+    start = marker.start()
+    end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+    section = text[start:end]
+    header = re.sub(r"\s+", " ", section.split("\n\n", 1)[0])
+    if any(subject in header for subject in expected_subjects):
+        selected.append(section)
+
+if len(selected) != 4:
+    raise SystemExit(f"Oczekiwano 4 patchy demuksera, znaleziono {len(selected)}.")
+
+output_path.write_text("".join(selected), encoding="utf-8", newline="\n")
+print("Zweryfikowano wszystkie cztery poprawki demuksera CBCS po tytulach.")
+print("Wszystkie cztery modyfikuja wylacznie libavformat/mov.c.")
 PY
-
 echo "Nakladanie poprawek na FFmpeg n9.0.2..."
 git -C "$FFMPEG_DIR" -c user.name="WAExplorer CBCS build" -c user.email="actions@users.noreply.github.com" am --keep-cr "$TMP_DIR/cbcs-demuxer.mbox"
 
