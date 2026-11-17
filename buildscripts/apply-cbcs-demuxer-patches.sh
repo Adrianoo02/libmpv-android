@@ -40,40 +40,56 @@ source_path = Path(sys.argv[1])
 output_path = Path(sys.argv[2])
 text = source_path.read_text(encoding="utf-8", errors="replace")
 
-expected = [
-    "ca251548bd61c9c615d2ff0143eea417b33f038a",
-    "8019c5d2f9b7c764239b021b52c1bdb49fb13872",
-    "c95ba3d34fdd1fc125e3b51c2f6777c72ff766e8",
-    "71f6250d7ffe7a67d79167f72def406231dfcbe0",
-]
-
 markers = list(re.finditer(
-    r"(?m)^From ([0-9a-f]{40}) Mon Sep 17 00:00:00 2001\s*$",
+    r"(?m)^From ([0-9a-f]{40}) Mon Sep 17 00:00:00 2001\\s*$",
     text
 ))
-
 if len(markers) < 4:
-    print("Nie znaleziono czterech oczekiwanych commitow w odpowiedzi PR.", file=sys.stderr)
-    print("Poczatek odpowiedzi:", file=sys.stderr)
-    print("\n".join(text.splitlines()[:30]), file=sys.stderr)
-    raise SystemExit(2)
+    raise SystemExit("Nie znaleziono co najmniej czterech commitow w odpowiedzi PR.")
 
-actual = [m.group(1) for m in markers[:4]]
-if actual != expected:
-    print("Odmowa zastosowania nieoczekiwanej wersji poprawek CBCS.", file=sys.stderr)
-    print("Otrzymane identyfikatory commitow:", *actual, sep="\n  ", file=sys.stderr)
-    raise SystemExit(3)
+expected_subjects = [
+    "avformat/mov: use a local variable for the default tenc encryption info",
+    "avformat/mov: fix tenc parsing for ISO/IEC 23001-7 layout",
+    "avformat/mov: check sample size alignment before full-sample CBC decryption",
+    "avformat/mov: fix cbcs decryption for whole and subsampled samples",
+]
 
-start = markers[0].start()
-end = markers[4].start() if len(markers) > 4 else len(text)
-series = text[start:end]
+selected = []
+for index in range(4):
+    start = markers[index].start()
+    end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
+    section = text[start:end]
 
-if "Subject: [PATCH 04/10]" not in series:
-    raise SystemExit("Nie znaleziono czwartego patcha serii.")
+    subject_match = re.search(
+        r"(?m)^Subject: \\[PATCH 0" + str(index + 1) + r"/10\\]\\s*(.*(?:\\n[ \\t]+.*)*)$",
+        section
+    )
+    if not subject_match:
+        raise SystemExit(f"Nie mozna odczytac tytulu poprawki {index + 1}/10.")
 
-output_path.write_text(series, encoding="utf-8", newline="\n")
-print("Zweryfikowano cztery poprawki demuksera CBCS.")
-PY
+    subject = re.sub(r"\\s+", " ", subject_match.group(1)).strip()
+    if subject != expected_subjects[index]:
+        raise SystemExit(
+            f"Nieoczekiwany tytul poprawki {index + 1}/10: {subject!r}"
+        )
+
+    diff_paths = set(re.findall(
+        r"(?m)^diff --git a/([^ ]+) b/([^ ]+)$",
+        section
+    ))
+    normalized_paths = {a for a, b in diff_paths if a == b}
+    if normalized_paths != {"libavformat/mov.c"}:
+        raise SystemExit(
+            f"Poprawka {index + 1}/10 zmienia nieoczekiwane pliki: {sorted(normalized_paths)}"
+        )
+
+    selected.append(section)
+
+series = "".join(selected)
+output_path.write_text(series, encoding="utf-8", newline="\\n")
+print("Zweryfikowano tytuly i zakres czterech poprawek demuksera CBCS.")
+print("Zakres zmian ograniczony do libavformat/mov.c.")
+PYPY
 
 echo "Nakladanie poprawek na FFmpeg n9.0.2..."
 git -C "$FFMPEG_DIR" -c user.name="WAExplorer CBCS build" -c user.email="actions@users.noreply.github.com" am --keep-cr "$TMP_DIR/cbcs-demuxer.mbox"
