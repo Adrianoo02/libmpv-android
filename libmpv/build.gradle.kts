@@ -15,6 +15,9 @@ android {
 
     defaultConfig {
         minSdk = 26
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
         consumerProguardFiles("proguard-rules.pro")
         externalNativeBuild {
             cmake {
