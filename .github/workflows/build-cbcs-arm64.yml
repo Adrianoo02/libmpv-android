@@ -1,4 +1,4 @@
-name: Build patched libmpv 1.1.0 (CBCS, arm64) - diagnostic
+name: Build patched libmpv 1.1.0 (CBCS, arm64) - saiz diagnostics
 
 on:
   push:
@@ -61,7 +61,7 @@ jobs:
         working-directory: ./buildscripts
         run: ./patch.sh
 
-      # Backport parsera tenc i deszyfrowania CBCS do przypietego FFmpeg n9.0.2.
+      # Backport parsera tenc i deszyfrowania CBCS do przypietego FFmpeg n9.0.2; szczegolowe logowanie atomu saiz.
       - name: Zastosuj poprawki FFmpeg dla CBCS
         working-directory: ./buildscripts
         run: bash ./apply-cbcs-demuxer-patches.sh
@@ -79,7 +79,7 @@ jobs:
       - name: Udostępnij AAR
         uses: actions/upload-artifact@v7
         with:
-          name: libmpv-1.1.0-cbcs-arm64-diag
+          name: libmpv-1.1.0-cbcs-arm64-saiz-diag
           path: ./libmpv/build/outputs/aar/libmpv-release.aar
           if-no-files-found: error
           retention-days: 14
