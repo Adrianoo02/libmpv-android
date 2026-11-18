@@ -299,67 +299,8 @@ cbcs = r'''static int cbcs_scheme_decrypt(MOVContext *c, MOVStreamContext *sc, A
 source = replace_function(source, "static int mov_read_tenc(", tenc)
 source = replace_function(source, "static int cbcs_scheme_decrypt(", cbcs)
 
-# Tymczasowa diagnostyka: wskaz, ktory atom MOV powoduje blad naglowka.
-diag_old = r'''            int err = parse(c, pb, a);
-            if (err < 0) {
-                c->atom_depth --;
-                return err;
-            }'''
-diag_new = r'''            int err = parse(c, pb, a);
-            if (err < 0) {
-                av_log(c->fc, AV_LOG_ERROR,
-                       "WAEXPLORER_DIAG: atom %s size=%"PRId64" offset=%"PRId64" parse_error=%d\n",
-                       av_fourcc2str(a.type), a.size, start_pos, err);
-                c->atom_depth --;
-                return err;
-            }'''
-if source.count(diag_old) != 1:
-    raise SystemExit("Nie znaleziono jednoznacznego bloku mov_read_default do diagnostyki.")
-source = source.replace(diag_old, diag_new, 1)
 
-tenc_size_old = '''    if (atom.size < 23)
-        return AVERROR_INVALIDDATA;'''
-tenc_size_new = '''    if (atom.size < 23) {
-        av_log(c->fc, AV_LOG_ERROR,
-               "WAEXPLORER_DIAG: tenc too small, atom_size=%"PRId64"\\n", atom.size);
-        return AVERROR_INVALIDDATA;
-    }'''
-if source.count(tenc_size_old) != 1:
-    raise SystemExit("Nie znaleziono kontroli rozmiaru tenc.")
-source = source.replace(tenc_size_old, tenc_size_new, 1)
-
-tenc_raw_old = '''    pattern = avio_r8(pb);
-    is_protected = avio_r8(pb);
-
-    /* ISO/IEC 23001-7 layout:'''
-tenc_raw_new = '''    pattern = avio_r8(pb);
-    is_protected = avio_r8(pb);
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG: tenc raw size=%"PRId64" version=%u field2=%u field3=%u\\\\n",
-           atom.size, version, pattern, is_protected);
-
-    /* ISO/IEC 23001-7 layout:'''
-if source.count(tenc_raw_old) != 1:
-    raise SystemExit("Nie znaleziono miejsca do diagnostyki pol tenc.")
-source = source.replace(tenc_raw_old, tenc_raw_new, 1)
-
-tenc_parsed_old = '''        iv_size = avio_r8(pb);
-    }
-
-    if (is_protected && !sc->cenc.encryption_index) {'''
-tenc_parsed_new = '''        iv_size = avio_r8(pb);
-    }
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG: tenc parsed legacy=%d protected=%u iv_size=%u pattern=0x%02x version=%u\\\\n",
-           legacy_layout, is_protected, iv_size, pattern, version);
-
-    if (is_protected && !sc->cenc.encryption_index) {'''
-if source.count(tenc_parsed_old) != 1:
-    raise SystemExit("Nie znaleziono miejsca do diagnostyki wyniku parsera tenc.")
-source = source.replace(tenc_parsed_old, tenc_parsed_new, 1)
-
-
-# Rozszerzona diagnostyka saiz: bez zmiany logiki parsowania atomu.
+# Accept an empty saiz atom when the fragment carries no auxiliary-info entries.
 saiz_start, saiz_end = find_function_end(source, "static int mov_read_saiz(")
 saiz = source[saiz_start:saiz_end]
 
@@ -367,81 +308,9 @@ def saiz_replace(old: str, new: str, label: str) -> None:
     global saiz
     count = saiz.count(old)
     if count != 1:
-        raise SystemExit(f"Diagnostyka saiz: oczekiwano jednego miejsca {label}, znaleziono {count}")
+        raise SystemExit(f"SAIZ patch: expected one {label}, found {count}")
     saiz = saiz.replace(old, new, 1)
 
-saiz_replace(
-    "unsigned int sample_count, aux_info_type, aux_info_param;",
-    "unsigned int version, flags, sample_count, aux_info_type, aux_info_param;",
-    "deklaracje"
-)
-saiz_replace(
-    """    ret = get_current_encryption_info(c, &encryption_index, &sc);
-    if (ret != 1)
-        return ret;""",
-    """    ret = get_current_encryption_info(c, &encryption_index, &sc);
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG_SAIZ: enter atom_payload=%"PRId64" pos=%"PRId64" ret=%d frag=%d streams=%d\\n",
-           atom.size, avio_tell(pb), ret, c->frag_index.current, c->fc->nb_streams);
-    if (ret != 1) {
-        av_log(c->fc, AV_LOG_ERROR,
-               "WAEXPLORER_DIAG_SAIZ: get_current_encryption_info returned %d\\n", ret);
-        return ret;
-    }
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG_SAIZ: stream_id=%d has_tenc=%d scheme=0x%08x default_iv_size=%u existing_samples=%u existing_aux_count=%u existing_offsets=%u\\n",
-           sc->id, !!sc->cenc.default_encrypted_sample,
-           sc->cenc.default_encrypted_sample ? sc->cenc.default_encrypted_sample->scheme : 0,
-           sc->cenc.per_sample_iv_size, encryption_index->nb_encrypted_samples,
-           encryption_index->auxiliary_info_sample_count, encryption_index->auxiliary_offsets_count);""",
-    "get_current"
-)
-saiz_replace(
-    """        av_log(c->fc, AV_LOG_DEBUG, "Ignoring duplicate encryption info in saiz\\n");
-        return 0;""",
-    """        av_log(c->fc, AV_LOG_ERROR, "WAEXPLORER_DIAG_SAIZ: duplicate encryption info already parsed; ignoring saiz\\n");
-        return 0;""",
-    "duplicate encryption info"
-)
-saiz_replace(
-    """        av_log(c->fc, AV_LOG_ERROR, "Duplicate saiz atom\\n");
-        return AVERROR_INVALIDDATA;""",
-    """        av_log(c->fc, AV_LOG_ERROR, "WAEXPLORER_DIAG_SAIZ: DUPLICATE saiz atom; previous auxiliary_info_sample_count=%u\\n",
-               encryption_index->auxiliary_info_sample_count);
-        return AVERROR_INVALIDDATA;""",
-    "duplicate saiz"
-)
-saiz_replace(
-    """    avio_r8(pb); /* version */
-    if (avio_rb24(pb) & 0x01) {  /* flags */""",
-    """    version = avio_r8(pb);
-    flags = avio_rb24(pb);
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG_SAIZ: version=%u flags=0x%06x atom_payload=%"PRId64"\\n",
-           version, flags, atom.size);
-    if (flags & 0x01) {""",
-    "version and flags"
-)
-saiz_replace(
-    """        aux_info_type = avio_rb32(pb);
-        aux_info_param = avio_rb32(pb);""",
-    """        aux_info_type = avio_rb32(pb);
-        aux_info_param = avio_rb32(pb);
-        av_log(c->fc, AV_LOG_ERROR,
-               "WAEXPLORER_DIAG_SAIZ: aux_type=0x%08x aux_param=0x%08x has_tenc=%d scheme=0x%08x\\n",
-               aux_info_type, aux_info_param, !!sc->cenc.default_encrypted_sample,
-               sc->cenc.default_encrypted_sample ? sc->cenc.default_encrypted_sample->scheme : 0);""",
-    "aux info type"
-)
-saiz_replace(
-    """                av_log(c->fc, AV_LOG_ERROR, "Saw encrypted saiz without schm/tenc\\n");
-                return AVERROR_INVALIDDATA;""",
-    """                av_log(c->fc, AV_LOG_ERROR,
-                       "WAEXPLORER_DIAG_SAIZ: ENCRYPTED saiz without schm/tenc; aux_type=0x%08x aux_param=0x%08x\\n",
-                       aux_info_type, aux_info_param);
-                return AVERROR_INVALIDDATA;""",
-    "missing schm/tenc"
-)
 saiz_replace(
     """    encryption_index->auxiliary_info_default_size = avio_r8(pb);
     sample_count = avio_rb32(pb);
@@ -451,51 +320,14 @@ saiz_replace(
             return AVERROR_INVALIDDATA;""",
     """    encryption_index->auxiliary_info_default_size = avio_r8(pb);
     sample_count = avio_rb32(pb);
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG_SAIZ: default_sample_info_size=%u sample_count=%u bytes_read=%"PRId64" payload_size=%"PRId64" eof=%d\\n",
-           encryption_index->auxiliary_info_default_size, sample_count,
-           avio_tell(pb), atom.size, pb->eof_reached);
 
     if (sample_count == 0) {
-        av_log(c->fc, AV_LOG_ERROR,
-               "WAEXPLORER_DIAG_SAIZ: EMPTY saiz accepted; no auxiliary info entries\\n");
         encryption_index->auxiliary_info_sample_count = 0;
         return 0;
     }
 
     if (encryption_index->auxiliary_info_default_size == 0) {""",
-    "default size and sample count"
-)
-saiz_replace(
-    """            av_log(c->fc, AV_LOG_ERROR, "Failed to read the auxiliary info, %s\\n",
-                   av_err2str(ret));""",
-    """            av_log(c->fc, AV_LOG_ERROR,
-                   "WAEXPLORER_DIAG_SAIZ: FAILED reading sample size table; expected=%u got=%d bytes_read=%"PRId64" payload_size=%"PRId64" eof=%d error=%d (%s)\\n",
-                   sample_count, ret, avio_tell(pb), atom.size, pb->eof_reached, ret, av_err2str(ret));""",
-    "sample size read failure"
-)
-saiz_replace(
-    """    if (encryption_index->auxiliary_offsets_count) {
-        return mov_parse_auxiliary_info(c, sc, pb, encryption_index);
-    }
-
-    return 0;""",
-    """    if (encryption_index->auxiliary_offsets_count) {
-        ret = mov_parse_auxiliary_info(c, sc, pb, encryption_index);
-        av_log(c->fc, AV_LOG_ERROR,
-               "WAEXPLORER_DIAG_SAIZ: mov_parse_auxiliary_info ret=%d sample_count=%u default_size=%u offsets=%u\\n",
-               ret, encryption_index->auxiliary_info_sample_count,
-               encryption_index->auxiliary_info_default_size,
-               encryption_index->auxiliary_offsets_count);
-        return ret;
-    }
-
-    av_log(c->fc, AV_LOG_ERROR,
-           "WAEXPLORER_DIAG_SAIZ: saiz parsed successfully; sample_count=%u default_size=%u\\n",
-           encryption_index->auxiliary_info_sample_count,
-           encryption_index->auxiliary_info_default_size);
-    return 0;""",
-    "auxiliary parse"
+    "empty saiz handling"
 )
 
 source = source[:saiz_start] + saiz + source[saiz_end:]
