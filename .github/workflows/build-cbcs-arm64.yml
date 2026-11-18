@@ -1,4 +1,4 @@
-name: Build patched libmpv 1.1.0 (CBCS, arm64) - empty SAIZ fix
+name: Build patched libmpv 1.1.0 (CBCS, arm64) - partial blocks fix
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/build-cbcs-arm64.yml
+      - buildscripts/apply-cbcs-demuxer-patches.sh
   workflow_dispatch:
     inputs:
       source_ref:
@@ -61,7 +62,7 @@ jobs:
         working-directory: ./buildscripts
         run: ./patch.sh
 
-      # Backport parsera tenc i CBCS do FFmpeg n9.0.2; tolerowanie pustego saiz i zachowanie oryginalnego CBC1.
+      # Backport parsera tenc i CBCS do FFmpeg n9.0.2; obsluga pustego saiz i niepelnych koncowych blokow CBCS; oryginalny CBC1.
       - name: Zastosuj poprawki FFmpeg dla CBCS
         working-directory: ./buildscripts
         run: bash ./apply-cbcs-demuxer-patches.sh
@@ -79,7 +80,7 @@ jobs:
       - name: Udostępnij AAR
         uses: actions/upload-artifact@v7
         with:
-          name: libmpv-1.1.0-cbcs-arm64-saiz-fix-preserve-cbc1
+          name: libmpv-1.1.0-cbcs-arm64-partial-blocks-preserve-cbc1
           path: ./libmpv/build/outputs/aar/libmpv-release.aar
           if-no-files-found: error
           retention-days: 14
