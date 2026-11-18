@@ -207,27 +207,7 @@ tenc = r'''static int mov_read_tenc(MOVContext *c, AVIOContext *pb, MOVAtom atom
     return 0;
 }'''
 
-cbc1_signature = "static int cbc1_scheme_decrypt("
-cbc1_start, cbc1_end = find_function_end(source, cbc1_signature)
-cbc1 = source[cbc1_start:cbc1_end]
-cbc1_old = r'''    if (!sample->subsample_count) {
-        /* decrypt the whole packet */
-        av_aes_crypt(sc->cenc.aes_ctx, input, input, size/16, iv, 1);
-        return 0;
-    }'''
-cbc1_new = r'''    if (!sample->subsample_count) {
-        /* decrypt the whole packet */
-        if (size % 16) {
-            av_log(c->fc, AV_LOG_ERROR, "sample size is not a multiple of 16\n");
-            return AVERROR_INVALIDDATA;
-        }
-        av_aes_crypt(sc->cenc.aes_ctx, input, input, size/16, iv, 1);
-        return 0;
-    }'''
-if cbc1.count(cbc1_old) != 1:
-    raise SystemExit("Nie znaleziono jednoznacznego bloku pelnego CBC1 do poprawienia.")
-cbc1 = cbc1.replace(cbc1_old, cbc1_new, 1)
-source = source[:cbc1_start] + cbc1 + source[cbc1_end:]
+
 
 cbcs = r'''static int cbcs_scheme_decrypt(MOVContext *c, MOVStreamContext *sc, AVEncryptionInfo *sample, uint8_t *input, int size)
 {
@@ -482,12 +462,14 @@ saiz_replace(
            encryption_index->auxiliary_info_default_size, sample_count,
            avio_tell(pb), atom.size, pb->eof_reached);
 
-    if (encryption_index->auxiliary_info_default_size == 0) {
-        if (sample_count == 0) {
-            av_log(c->fc, AV_LOG_ERROR,
-                   "WAEXPLORER_DIAG_SAIZ: INVALID zero default size and zero sample_count\\n");
-            return AVERROR_INVALIDDATA;
-        }""",
+    if (sample_count == 0) {
+        av_log(c->fc, AV_LOG_ERROR,
+               "WAEXPLORER_DIAG_SAIZ: EMPTY saiz accepted; no auxiliary info entries\\n");
+        encryption_index->auxiliary_info_sample_count = 0;
+        return 0;
+    }
+
+    if (encryption_index->auxiliary_info_default_size == 0) {""",
     "default size and sample count"
 )
 saiz_replace(
@@ -527,7 +509,6 @@ source = source[:saiz_start] + saiz + source[saiz_end:]
 required = (
     "legacy_layout",
     "crypt_blocks",
-    "sample size is not a multiple of 16",
     "subsample BytesOfProtectedData is not a multiple of 16",
 )
 for token in required:
@@ -535,8 +516,8 @@ for token in required:
         raise SystemExit(f"Brak wymaganej logiki po zmianach: {token}")
 
 path.write_text(source, encoding="utf-8", newline="\n")
-print("Zmieniono funkcje mov_read_tenc, cbc1_scheme_decrypt i cbcs_scheme_decrypt.")
-print("Zweryfikowano parser obu ukladow tenc, wzorzec CBCS oraz wyrownanie AES.")
+print("Zmieniono mov_read_tenc i cbcs_scheme_decrypt; CBC1 pozostawiono bez zmian.")
+print("Zweryfikowano oba uklady tenc, wzorzec CBCS i tolerowanie pustego saiz; CBC1 pozostaje oryginalny.")
 PY
 
 PATCHED_FILES="$(git -C "$FFMPEG_DIR" diff --name-only | sort -u)"
