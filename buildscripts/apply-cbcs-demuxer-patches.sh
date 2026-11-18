@@ -239,10 +239,7 @@ cbcs = r'''static int cbcs_scheme_decrypt(MOVContext *c, MOVStreamContext *sc, A
         memcpy(iv, sample->iv, 16);
         if (!sample->crypt_byte_block && !sample->skip_byte_block) {
             /* zero pattern means full-sample CBC */
-            if (size % 16) {
-                av_log(c->fc, AV_LOG_ERROR, "sample size is not a multiple of 16\n");
-                return AVERROR_INVALIDDATA;
-            }
+            /* CBCS leaves a final partial block clear. */
             av_aes_crypt(sc->cenc.aes_ctx, input, input, size / 16, iv, 1);
         } else {
             /* apply the crypt/skip pattern to the whole sample */
@@ -275,10 +272,7 @@ cbcs = r'''static int cbcs_scheme_decrypt(MOVContext *c, MOVStreamContext *sc, A
         data = input;
         rem_bytes = sample->subsamples[i].bytes_of_protected_data;
         if (!sample->crypt_byte_block && !sample->skip_byte_block) {
-            if (rem_bytes % 16) {
-                av_log(c->fc, AV_LOG_ERROR, "subsample BytesOfProtectedData is not a multiple of 16\n");
-                return AVERROR_INVALIDDATA;
-            }
+            /* CBCS leaves a final partial block in each subsample clear. */
             av_aes_crypt(sc->cenc.aes_ctx, data, data, rem_bytes / 16, iv, 1);
         } else {
             while (rem_bytes >= 16) {
@@ -509,7 +503,8 @@ source = source[:saiz_start] + saiz + source[saiz_end:]
 required = (
     "legacy_layout",
     "crypt_blocks",
-    "subsample BytesOfProtectedData is not a multiple of 16",
+    "CBCS leaves a final partial block clear.",
+    "CBCS leaves a final partial block in each subsample clear.",
 )
 for token in required:
     if token not in source:
